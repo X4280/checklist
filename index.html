@@ -17,13 +17,17 @@
     .sidebar-section{padding:14px 12px 8px}
     .sidebar-section.bottom{margin-top:auto;border-top:1px solid var(--border)}
     .sidebar-label{font-family:'DM Mono',monospace;font-size:.63rem;letter-spacing:.13em;color:var(--muted);padding:0 8px;margin-bottom:6px;text-transform:uppercase}
-    .nav-item{align-items:center;background:none;border:none;border-radius:8px;color:var(--muted);cursor:pointer;display:flex;font-family:'Syne',sans-serif;font-size:.87rem;gap:10px;padding:9px 10px;text-align:left;transition:background .15s,color .15s;width:100%}
+    .nav-item{align-items:center;background:none;border:none;border-radius:8px;color:var(--muted);cursor:pointer;display:flex;font-family:'Syne',sans-serif;font-size:.87rem;gap:10px;padding:9px 10px;text-align:left;transition:background .15s,color .15s;width:100%;position:relative}
     .nav-item:hover{background:var(--surface2);color:var(--text)}
     .nav-item.active{background:var(--accent);color:#0c0c0c;font-weight:700}
     .nav-item .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-    .nav-item .count{margin-left:auto;font-family:'DM Mono',monospace;font-size:.68rem;opacity:.55}
+    .nav-item .count{font-family:'DM Mono',monospace;font-size:.68rem;opacity:.55}
     .add-btn-side{align-items:center;background:none;border:1.5px dashed var(--muted2);border-radius:8px;color:var(--muted);cursor:pointer;display:flex;font-family:'DM Mono',monospace;font-size:.68rem;gap:8px;letter-spacing:.06em;padding:8px 10px;margin-top:4px;transition:all .15s;width:100%}
     .add-btn-side:hover{border-color:var(--accent);color:var(--accent)}
+    .nav-del{background:none;border:none;color:transparent;cursor:pointer;font-size:.68rem;padding:2px 5px;border-radius:3px;transition:color .15s;flex-shrink:0;line-height:1;margin-left:auto}
+    .nav-item:hover .nav-del{color:var(--muted)}
+    .nav-item.active .nav-del{color:rgba(0,0,0,.3)}
+    .nav-del:hover{color:var(--danger)!important}
     /* MAIN */
     .main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
     .topbar{border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:14px 28px;flex-shrink:0;background:var(--bg)}
@@ -247,18 +251,37 @@
     document.getElementById('acct-nav').innerHTML=S.accounts.map(a=>{
       const cnt=S.tasks.filter(t=>t.accountId===a.id&&!t.done).length;
       const active=viewType==='account'&&viewId===a.id;
-      return `<button class="nav-item${active?' active':''}" onclick="selectView('account',this,'${a.id}')">
+      return `<div class="nav-item${active?' active':''}" data-nav-type="account" data-nav-id="${a.id}">
         <span class="dot" style="background:${a.color}"></span>${esc(a.name)}<span class="count">${cnt}</span>
-      </button>`;
+        <button class="nav-del" data-del-type="account" data-del-id="${a.id}" title="Delete">&#10005;</button>
+      </div>`;
     }).join('');
 
     document.getElementById('tier-nav').innerHTML=S.tiers.map(t=>{
       const cnt=S.tasks.filter(tk=>tk.tierId===t.id&&!tk.done).length;
       const active=viewType==='tier'&&viewId===t.id;
-      return `<button class="nav-item${active?' active':''}" onclick="selectView('tier',this,'${t.id}')">
+      return `<div class="nav-item${active?' active':''}" data-nav-type="tier" data-nav-id="${t.id}">
         <span class="dot" style="background:${t.color}"></span>${esc(t.name)}<span class="count">${cnt}</span>
-      </button>`;
+        <button class="nav-del" data-del-type="tier" data-del-id="${t.id}" title="Delete">&#10005;</button>
+      </div>`;
     }).join('');
+
+    // Bind nav item clicks
+    document.querySelectorAll('#acct-nav .nav-item, #tier-nav .nav-item').forEach(el=>{
+      el.addEventListener('click', e=>{
+        if(e.target.closest('.nav-del')) return;
+        selectView(el.dataset.navType, el, el.dataset.navId);
+      });
+    });
+
+    // Bind delete buttons
+    document.querySelectorAll('.nav-del').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        e.stopPropagation();
+        if(btn.dataset.delType==='account') deleteAccount(btn.dataset.delId);
+        else deleteTier(btn.dataset.delId);
+      });
+    });
   }
 
   function renderSelects(){
@@ -425,6 +448,34 @@
   }
 
   function clearDone(){S.tasks=S.tasks.filter(t=>!t.done);persist();render();}
+
+  function deleteAccount(id){
+    const a=S.accounts.find(a=>a.id===id);
+    if(!a)return;
+    const taskCount=S.tasks.filter(t=>t.accountId===id).length;
+    const msg=taskCount
+      ?`Delete "${a.name}"? ${taskCount} task${taskCount>1?'s':''} will be unassigned.`
+      :`Delete account "${a.name}"?`;
+    if(!confirm(msg))return;
+    S.accounts=S.accounts.filter(a=>a.id!==id);
+    S.tasks.forEach(t=>{if(t.accountId===id)t.accountId=null;});
+    if(viewType==='account'&&viewId===id){viewType='all';viewId=null;}
+    persist();render();
+  }
+
+  function deleteTier(id){
+    const ti=S.tiers.find(t=>t.id===id);
+    if(!ti)return;
+    const taskCount=S.tasks.filter(t=>t.tierId===id).length;
+    const msg=taskCount
+      ?`Delete tier "${ti.name}"? ${taskCount} task${taskCount>1?'s':''} will be unassigned.`
+      :`Delete tier "${ti.name}"?`;
+    if(!confirm(msg))return;
+    S.tiers=S.tiers.filter(t=>t.id!==id);
+    S.tasks.forEach(t=>{if(t.tierId===id)t.tierId=null;});
+    if(viewType==='tier'&&viewId===id){viewType='all';viewId=null;}
+    persist();render();
+  }
 
   /* ── MODAL ── */
   let mMode='account',mColor=PALETTE[0];
